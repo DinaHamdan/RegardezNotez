@@ -1,0 +1,136 @@
+services:
+  # platforms: amd64 and arm64
+  mysql:
+    image: mysql:8
+    ports:
+      - "${EXTERNAL_MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql8-data:/var/lib/mysql
+    networks:
+      - backend
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-regardez_notez}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-password}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_USER: ${MYSQL_USER:-user}
+
+  # platforms: amd64 only
+  mailhog:
+    image: mailhog/mailhog
+    platform: linux/amd64
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    user: root
+    networks:
+      - backend
+    environment:
+      - MH_SMTP_BIND_ADDR=0.0.0.0:25
+
+  # platforms: amd64 or arm64
+  nest-api:
+    depends_on:
+      - mysql
+    build:
+      context: ./nest-api
+      dockerfile: Dockerfile
+      target: ${ENV:-dev}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    environment:
+      ENV: ${ENV:-dev}
+      DOMAIN: ${DOMAIN:-www.regardeznotez.localhost}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-regardez_notez}
+      MYSQL_HOST: ${MYSQL_HOST:-mysql}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_PORT: 3306
+      MYSQL_USER: ${MYSQL_USER:-root}
+      SMTP_HOST: ${SMTP_HOST:-mailhog}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-test}
+      SMTP_PORT: ${SMTP_PORT:-25}
+      SMTP_USER: ${SMTP_USER:-test}
+    volumes:
+      - ./nest-api:/var/www/nest-api
+    working_dir: /var/www/nest-api
+    ports:
+      - "9301:9301" # debugger port
+    networks:
+      - backend
+
+  # platforms: amd64 or arm64
+  sveltekit:
+    ports:
+      - "5173"
+      - "9300:9300" # debugger port
+    build:
+      context: ./sveltekit
+      dockerfile: Dockerfile
+      target: ${ENV:-dev}
+    volumes:
+      - ./sveltekit:/app
+    working_dir: /app
+    networks:
+      - backend
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    environment:
+      ENV: ${ENV:-dev}
+      DOMAIN: ${DOMAIN:-www.regardeznotez.localhost}
+      NESTAPI_CLIENT_URL: https://${DOMAIN:-www.regardeznotez.localhost}/api
+      NESTAPI_SERVER_URL: http://nest-api:3000/api
+      SVELTEKIT_CLIENT_URL: https://${DOMAIN:-www.regardeznotez.localhost}
+      SVELTEKIT_SERVER_URL: http://sveltekit:5173
+
+  # platforms: amd64 & arm64
+  haproxy:
+    image: haproxy:2.9.5-alpine
+    depends_on:
+      - mysql
+      - nest-api
+      - sveltekit
+      - mailhog
+    volumes:
+      - "./config/haproxy:/usr/local/etc/haproxy"
+    ports:
+      - "0.0.0.0:${HTTP_PORT:-80}:80"
+      - "0.0.0.0:${HTTPS_PORT:-443}:443"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+    networks:
+      backend:
+        aliases:
+          - ${DOMAIN:-http://regardeznotez.localhost}
+    hostname: haproxy
+
+volumes:
+  mysql8-data:
+    driver: local
+  nest-api-node-modules-data:
+    driver: local
+  nest-api-dist-data:
+    driver: local
+  sveltekit-node-modules-data:
+    driver: local
+
+networks:
+  backend:
