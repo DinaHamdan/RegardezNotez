@@ -1,6 +1,11 @@
 <script>
-	import '../app.css';
-	let { children } = $props();
+  import { accessToken } from '$lib/store';
+  import '../app.css';
+
+  /** @type {import('./$types').LayoutData} */
+  export let data;
+
+  $accessToken = data.accessToken;
 </script>
 
-{@render children()}
+<slot />

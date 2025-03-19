@@ -94,8 +94,10 @@ services:
       ENV: ${ENV:-dev}
       DOMAIN: ${DOMAIN:-www.regardeznotez.localhost}
       NESTAPI_CLIENT_URL: https://${DOMAIN:-www.regardeznotez.localhost}/api
+      PUBLIC_NESTAPI_CLIENT_URL: https://${DOMAIN:-www.regardeznotez.localhost}/api
       NESTAPI_SERVER_URL: http://nest-api:3000/api
       SVELTEKIT_CLIENT_URL: https://${DOMAIN:-www.regardeznotez.localhost}
+      PUBLIC_SVELTEKIT_CLIENT_URL: https://${DOMAIN:-www.regardeznotez.localhost}
       SVELTEKIT_SERVER_URL: http://sveltekit:5173
 
   # platforms: amd64 & arm64

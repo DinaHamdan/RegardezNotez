@@ -6,38 +6,44 @@ import {
   Logger,
   Post,
   Query,
-  Redirect,
-  Req,
+  Res,
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common';
 import { AuthTokensService } from '../services/auth-tokens.service';
 import { RefreshTokenGuard } from '../guards';
-import { CurrentAuthToken, Public } from '../decorators';
+import { CurrentAuthToken, CurrentUser, Public } from '../decorators';
 import { AuthSignUpDto } from '../dtos/auth-sign-up.dto';
 import { UsersService } from '../services/users.service';
 import { AuthSignInDto } from '../dtos/auth-sign-in.dto';
 import { EntityDeletedException, EntityNotFoundException } from '../exceptions';
-import { Request } from 'express';
 
 @Controller('auth')
 export class AuthController {
   private logger = new Logger(AuthController.name);
-
-  private FRONT_URL = `https://${process.env.DOMAIN}`;
 
   constructor(
     private readonly authTokensService: AuthTokensService,
     private readonly usersService: UsersService,
   ) {}
 
+  @Get('me')
+  getCurrentUser(@CurrentUser() user) {
+    this.logger.verbose('getCurrentUser()');
+
+    return user;
+  }
+
   @Post('refresh-token')
   @UseGuards(RefreshTokenGuard)
   @Public()
-  async refreshToken(@CurrentAuthToken() authToken) {
+  async refreshToken(@CurrentAuthToken() authToken, @Res({ passthrough: true }) response) {
     this.logger.verbose('refreshToken()');
 
     const freshAuthToken = await this.authTokensService.refresh(authToken);
+
+    response.cookie('access_token', authToken.accessToken || '');
+    response.cookie('refresh_token', authToken.refreshToken || '');
 
     return {
       access_token: freshAuthToken.accessToken,
@@ -47,7 +53,7 @@ export class AuthController {
 
   @Post('sign-up')
   @Public()
-  async signUp(@Req() req: Request, @Body() dto: AuthSignUpDto) {
+  async signUp(@Res({ passthrough: true }) response, @Body() dto: AuthSignUpDto) {
     this.logger.verbose('signUp()');
 
     const userAlreadyExist = await this.usersService.existByEmail(dto.email);
@@ -66,6 +72,9 @@ export class AuthController {
     const remember = false;
     const authToken = await this.authTokensService.create(user.id, remember);
 
+    response.cookie('access_token', authToken.accessToken || '');
+    response.cookie('refresh_token', authToken.refreshToken || '');
+
     return {
       access_token: authToken.accessToken || '',
       refresh_token: authToken.refreshToken || '',
@@ -74,7 +83,7 @@ export class AuthController {
 
   @Post('sign-in')
   @Public()
-  async signIn(@Req() req: Request, @Body() dto: AuthSignInDto) {
+  async signIn(@Res({ passthrough: true }) response, @Body() dto: AuthSignInDto) {
     this.logger.verbose('signIn()');
 
     const userId = await this.usersService.verifyPassword(dto.email, dto.password).catch((err) => {
@@ -87,6 +96,9 @@ export class AuthController {
     const remember = false;
     const authToken = await this.authTokensService.create(userId, remember);
 
+    response.cookie('access_token', authToken.accessToken || '');
+    response.cookie('refresh_token', authToken.refreshToken || '');
+
     return {
       access_token: authToken.accessToken || '',
       refresh_token: authToken.refreshToken || '',
@@ -94,12 +106,11 @@ export class AuthController {
   }
 
   @Get('sign-out')
-  @Redirect()
   @Public()
   async signOut(
+    @Res({ passthrough: true }) response,
     @Query('access_token') accessToken?: string,
     @Query('refresh_token') refreshToken?: string,
-    @Query('redirect_uri') redirectUri?: string,
   ) {
     this.logger.verbose('signOut()');
 
@@ -127,15 +138,11 @@ export class AuthController {
         });
     }
 
-    // Use redirectUri only if it's front app
-    const redirectUriIsFrontUrl = redirectUri && redirectUri.indexOf(this.FRONT_URL) === 0;
+    response.cookie('access_token', '', { expires: new Date(0) });
+    response.cookie('refresh_token', '', { expires: new Date(0) });
 
-    if (redirectUriIsFrontUrl) {
-      this.logger.verbose(`REDIRECT: ${redirectUri}`);
-      return { url: redirectUri };
-    }
-
-    this.logger.verbose(`REDIRECT: ${this.FRONT_URL}`);
-    return { url: this.FRONT_URL };
+    return {
+      status: 'ok',
+    };
   }
 }
